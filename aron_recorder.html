@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice recording — ARON</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#141D26;
+    --surface:#1C2836;
+    --surface-2:#243343;
+    --line:#2E4053;
+    --paper:#EDE8DE;
+    --muted:#8194A6;
+    --tally:#D93B2B;
+    --ok:#6FA86B;
+    --warn:#D9A441;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);
+    color:var(--paper);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    display:flex;flex-direction:column;
+    overflow:hidden;
+  }
+  /* tally frame — the studio on-air light */
+  #tally{
+    position:fixed;inset:0;pointer-events:none;z-index:50;
+    border:0 solid var(--tally);
+    transition:border-width .12s ease;
+  }
+  body.recording #tally{border-width:7px}
+  body.recording #tally::after{
+    content:'';position:absolute;inset:0;
+    box-shadow:inset 0 0 70px rgba(217,59,43,.30);
+  }
+
+  /* ---------- setup ---------- */
+  #setup{
+    margin:auto;width:min(620px,92vw);padding:34px 0;
+    overflow-y:auto;max-height:100vh;
+  }
+  #setup h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin-bottom:6px}
+  #setup .sub{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:26px}
+  .step{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px 18px;margin-bottom:12px;
+    display:flex;align-items:center;gap:14px;
+  }
+  .step .n{
+    width:26px;height:26px;flex:0 0 26px;border-radius:50%;
+    border:1px solid var(--line);color:var(--muted);
+    display:grid;place-items:center;font-size:13px;
+  }
+  .step.done .n{background:var(--ok);border-color:var(--ok);color:#121A12}
+  .step .body{flex:1;min-width:0}
+  .step .label{font-size:14px;font-weight:500}
+  .step .hint{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5;overflow-wrap:anywhere}
+
+  /* ---------- password gate ---------- */
+  #lock{margin:auto;width:min(380px,92vw);padding:34px 0}
+  #lock h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin-bottom:6px}
+  #lock .sub{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:22px}
+  #lock label{display:block;font-size:13px;margin-bottom:6px}
+  #pw{
+    width:100%;background:var(--surface-2);color:var(--paper);border:1px solid var(--line);
+    border-radius:7px;padding:11px 12px;font-family:inherit;font-size:15px;margin-bottom:12px;
+  }
+  #pw:focus-visible{outline:2px solid var(--paper);outline-offset:1px}
+  #lockmsg{font-size:13px;color:var(--warn);min-height:20px;margin-top:12px;line-height:1.5}
+  .opts{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px 18px;margin-bottom:12px;
+  }
+  .opt-row{display:flex;align-items:center;justify-content:space-between;
+    gap:12px;padding:7px 0;font-size:13.5px}
+  .opt-row + .opt-row{border-top:1px solid var(--line)}
+  .opt-row .d{font-size:12px;color:var(--muted);margin-top:2px}
+  select,input[type=file]{
+    background:var(--surface-2);color:var(--paper);border:1px solid var(--line);
+    border-radius:6px;padding:7px 9px;font-family:inherit;font-size:13px;max-width:58%;
+  }
+  input[type=checkbox]{width:17px;height:17px;accent-color:var(--ok)}
+  button{
+    font-family:inherit;font-size:14px;font-weight:500;cursor:pointer;
+    background:var(--surface-2);color:var(--paper);
+    border:1px solid var(--line);border-radius:7px;padding:9px 15px;
+    transition:background .13s,border-color .13s;
+  }
+  button:hover:not(:disabled){background:#2C3E52;border-color:#3D5670}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button:focus-visible{outline:2px solid var(--paper);outline-offset:2px}
+  .primary{background:var(--paper);color:#141D26;border-color:var(--paper);width:100%;padding:12px}
+  .primary:hover:not(:disabled){background:#fff;border-color:#fff}
+  .note{
+    font-size:12.5px;color:var(--muted);line-height:1.65;
+    border-inline-start:2px solid var(--line);padding-inline-start:12px;margin-top:18px;
+  }
+
+  /* ---------- recorder ---------- */
+  #app{display:none;flex-direction:column;height:100%}
+  header{
+    padding:13px 22px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:18px;flex:0 0 auto;
+  }
+  #bar{flex:1;height:5px;background:var(--surface-2);border-radius:3px;overflow:hidden}
+  #barfill{height:100%;width:0;background:var(--ok);transition:width .25s}
+  #count{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  #jump{
+    background:var(--surface-2);border:1px solid var(--line);color:var(--paper);
+    border-radius:6px;padding:4px 8px;width:88px;font-family:inherit;font-size:12.5px;
+    text-align:center;
+  }
+
+  main{flex:1;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;padding:20px 30px;gap:26px;min-height:0}
+  #sid{font-size:12.5px;color:var(--muted);letter-spacing:.04em;font-variant-numeric:tabular-nums}
+  #sentence{
+    font-family:'Noto Naskh Arabic','Scheherazade New','Vazirmatn',Tahoma,serif;
+    font-size:clamp(26px,4.1vw,46px);line-height:1.85;text-align:center;
+    max-width:19ch;font-weight:500;
+  }
+  #saved-tag{font-size:12.5px;color:var(--ok);height:16px}
+
+  /* meter */
+  #meterwrap{width:min(520px,80vw)}
+  #meter{height:7px;background:var(--surface-2);border-radius:4px;overflow:hidden;position:relative}
+  #mfill{height:100%;width:0;background:var(--ok);transition:width .05s linear}
+  #mfill.hot{background:var(--warn)}
+  #mfill.clip{background:var(--tally)}
+  #mticks{position:absolute;inset:0;pointer-events:none}
+  #mticks i{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.16)}
+  #mlabel{font-size:12px;color:var(--muted);text-align:center;margin-top:7px;height:16px}
+  #mlabel.bad{color:var(--warn)}
+
+  footer{
+    flex:0 0 auto;border-top:1px solid var(--line);padding:15px 22px;
+    display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;
+  }
+  #rec{
+    background:var(--tally);border-color:var(--tally);color:#fff;
+    min-width:190px;padding:12px 18px;font-size:15px;
+  }
+  #rec:hover:not(:disabled){background:#EC4A38;border-color:#EC4A38}
+  #approve{background:var(--ok);border-color:var(--ok);color:#101A10}
+  #approve:hover:not(:disabled){background:#7EBA79;border-color:#7EBA79}
+  kbd{
+    font-family:inherit;font-size:11px;background:rgba(255,255,255,.09);
+    border-radius:3px;padding:1px 5px;margin-inline-start:7px;color:inherit;opacity:.75;
+  }
+  #keys{font-size:11.5px;color:var(--muted);text-align:center;padding:0 22px 13px}
+
+  /* ---------- done ---------- */
+  #done{display:none;margin:auto;width:min(560px,92vw);text-align:center;padding:30px 0}
+  #done h2{font-size:24px;font-weight:600;margin-bottom:10px}
+  #donestats{color:var(--muted);font-size:14px;line-height:1.75;margin-bottom:24px}
+  #zipstatus{font-size:13px;color:var(--muted);margin-top:14px;min-height:20px}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+<div id="tally"></div>
+
+<!-- ======================= PASSWORD ======================= -->
+<section id="lock">
+  <h1>Voice recording</h1>
+  <p class="sub">Enter the password you were given to open the recorder.</p>
+  <label for="pw">Password</label>
+  <input type="password" id="pw" autocomplete="current-password">
+  <button class="primary" id="unlock">Unlock</button>
+  <div id="lockmsg" role="alert"></div>
+</section>
+
+<!-- ======================= SETUP ======================= -->
+<section id="setup" style="display:none">
+  <h1>Voice recording</h1>
+  <p class="sub">Each sentence is recorded separately and saved straight into your folder.
+     You can stop at any time and continue later from where you left off.</p>
+
+  <div class="step" id="s1">
+    <div class="n">1</div>
+    <div class="body">
+      <div class="label">Recording script</div>
+      <div class="hint" id="h1">Loading from Google Drive…</div>
+    </div>
+  </div>
+
+  <div class="step" id="s2">
+    <div class="n">2</div>
+    <div class="body">
+      <div class="label">Save folder</div>
+      <div class="hint" id="h2">Where the recordings will be saved</div>
+    </div>
+    <button id="pickdir">Choose folder</button>
+  </div>
+
+  <div class="step" id="s3">
+    <div class="n">3</div>
+    <div class="body">
+      <div class="label">Microphone</div>
+      <div class="hint" id="h3">Microphone permission is required</div>
+    </div>
+    <select id="mics"><option>—</option></select>
+  </div>
+
+  <div class="opts">
+    <div class="opt-row">
+      <div>
+        <div>Trim silence at start and end</div>
+        <div class="d">Keeps 200 ms of padding</div>
+      </div>
+      <input type="checkbox" id="trim" checked>
+    </div>
+    <div class="opt-row">
+      <div>
+        <div>Skip sentences already recorded</div>
+        <div class="d">Continue where you left off</div>
+      </div>
+      <input type="checkbox" id="skipdone" checked>
+    </div>
+  </div>
+
+  <button class="primary" id="start" disabled>Start recording</button>
+
+  <p class="note">
+    Keep the same microphone, distance and settings in every session.
+    Automatic gain control and noise suppression are turned off so the audio stays raw.
+    Use Chrome or Edge on a desktop computer.
+  </p>
+</section>
+
+<!-- ======================= RECORDER ======================= -->
+<section id="app">
+  <header>
+    <input id="jump" type="number" min="1" placeholder="No.">
+    <div id="bar"><div id="barfill"></div></div>
+    <div id="count">—</div>
+  </header>
+
+  <main>
+    <div id="sid">—</div>
+    <div id="sentence" dir="rtl" lang="ckb">—</div>
+    <div id="saved-tag"></div>
+    <div id="meterwrap">
+      <div id="meter">
+        <div id="mfill"></div>
+        <div id="mticks"><i style="inset-inline-start:50%"></i><i style="inset-inline-start:75%"></i><i style="inset-inline-start:90%"></i></div>
+      </div>
+      <div id="mlabel"></div>
+    </div>
+  </main>
+
+  <footer>
+    <button id="prev">Previous</button>
+    <button id="rec">Record<kbd>Space</kbd></button>
+    <button id="play" disabled>Play<kbd>P</kbd></button>
+    <button id="approve" disabled>Save<kbd>Enter</kbd></button>
+    <button id="retake" disabled>Retake<kbd>R</kbd></button>
+    <button id="next">Next</button>
+  </footer>
+  <div id="keys">Space record · P play · Enter save · R retake · ← → previous / next</div>
+</section>
+
+<!-- ======================= DONE ======================= -->
+<section id="done">
+  <h2>All sentences recorded</h2>
+  <div id="donestats"></div>
+  <button id="makezip">Create ZIP file</button>
+  <button id="backwork">Back to recording</button>
+  <div id="zipstatus"></div>
+</section>
+
+<script>
+"use strict";
+
+/* ============ state ============ */
+let items = [];            // {id, text}
+let idx = 0;
+let dirHandle = null;
+let doneSet = new Set();
+let stream = null, ac = null, srcNode = null, worklet = null, analyser = null;
+let chunks = [], recording = false, stopping = false, saving = false, takeBuf = null, takeRate = 48000;
+let takeURL = null, stopResolve = null;
+const SAMPLE_RATE = 48000; // fixed so every session produces the same format
+let meterRAF = null, peakHold = 0;
+let audioEl = new Audio();
+
+const $ = s => document.querySelector(s);
+
+/* ============ 0. password + script from Google Drive ============ */
+// Paste the Web app URL from Apps Script (Deploy → Manage deployments) here.
+// The URL is not a secret; the password is checked on Google's side.
+const DRIVE_API_URL = 'https://script.google.com/macros/s/AKfycbzOEJqgfcxdifRF0_ug9lvVCkHrTKTtVVgur2Y8D8RBRw-ihdLKnBozVlh03UPqU7ViEA/exec';
+
+async function unlock() {
+  const msg = $('#lockmsg');
+  const pw = $('#pw').value;
+  if (DRIVE_API_URL.startsWith('PASTE')) { msg.textContent = 'This page is not set up yet: the Drive web app URL is missing.'; return; }
+  if (!pw) { msg.textContent = 'Enter the password.'; return; }
+
+  $('#unlock').disabled = true;
+  msg.textContent = '';
+  $('#unlock').textContent = 'Checking…';
+  try {
+    // text/plain body = "simple" request, so Apps Script needs no CORS preflight
+    const res = await fetch(DRIVE_API_URL, { method: 'POST', body: JSON.stringify({ action: 'script', password: pw }) });
+    if (!res.ok) throw new Error('Google returned HTTP ' + res.status + '.');
+    let data;
+    try { data = await res.json(); }
+    catch { throw new Error('Unexpected reply from Google. Check the web app URL and that access is set to "Anyone".'); }
+    if (!data.ok) throw new Error(data.error || 'Could not open the recorder.');
+
+    const parsed = parseScript(data.text || '');
+    if (!parsed.length) throw new Error('The recording script on Drive contains no sentences.');
+    items = parsed;
+
+    $('#pw').value = '';
+    $('#lock').style.display = 'none';
+    $('#setup').style.display = 'block';
+    $('#s1').classList.add('done');
+    $('#h1').textContent = items.length + ' sentences loaded from Google Drive';
+    refreshStart();
+    listMics(); // ask for the microphone only after the password is accepted
+  } catch (err) {
+    msg.textContent = err.message === 'Failed to fetch'
+      ? 'Could not reach Google. Check the internet connection and try again.'
+      : err.message;
+    $('#pw').select();
+  } finally {
+    $('#unlock').disabled = false;
+    $('#unlock').textContent = 'Unlock';
+  }
+}
+$('#unlock').addEventListener('click', unlock);
+$('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); unlock(); } });
+$('#pw').focus();
+
+function parseScript(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return [];
+
+  // CSV with a header naming a Sorani column?
+  const head = splitCSV(lines[0]).map(h => h.trim().toLowerCase());
+  const kurdCol = head.findIndex(h => /sorani|kurd|ckb|کوردی/.test(h));
+  const idCol = head.findIndex(h => /^id$|شناسه/.test(h));
+  if (kurdCol > -1 && idCol > -1) {
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+      const c = splitCSV(lines[i]);
+      const id = (c[idCol] || '').trim(), t = (c[kurdCol] || '').trim();
+      if (id && t) out.push({ id, text: t });
+    }
+    return out;
+  }
+
+  // otherwise: "id<TAB>text" or "id,text"
+  const out = [];
+  for (const line of lines) {
+    let i = line.indexOf('\t');
+    if (i < 0) i = line.indexOf(',');
+    if (i < 0) continue;
+    const id = line.slice(0, i).trim(), t = line.slice(i + 1).trim();
+    if (/^id$/i.test(id)) continue; // header row such as "id,text"
+    if (id && t) out.push({ id, text: t.replace(/^"|"$/g, '') });
+  }
+  return out;
+}
+
+function splitCSV(line) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/* ============ 2. output folder ============ */
+$('#pickdir').addEventListener('click', async () => {
+  if (!window.showDirectoryPicker) {
+    $('#h2').textContent = 'This browser can’t save to folders. Open the page in Chrome or Edge.';
+    return;
+  }
+  try {
+    dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+  } catch { return; }
+
+  doneSet = new Set();
+  for await (const [name, h] of dirHandle.entries()) {
+    if (h.kind === 'file' && name.toLowerCase().endsWith('.wav')) {
+      doneSet.add(name.replace(/\.wav$/i, ''));
+    }
+  }
+  $('#s2').classList.add('done');
+  $('#h2').textContent = dirHandle.name +
+    (doneSet.size ? ' · ' + doneSet.size + ' already recorded' : '');
+  refreshStart();
+});
+
+/* ============ 3. microphone ============ */
+async function initMic(deviceId) {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  const constraints = {
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      channelCount: 1,
+      ...(deviceId ? { deviceId: { exact: deviceId } } : {})
+    }
+  };
+  stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+  if (!ac) {
+    ac = new AudioContext({ sampleRate: SAMPLE_RATE });
+    // Recording is switched on and off inside the worklet, and "stop" is
+    // acknowledged only after the last chunk has been posted, so no audio
+    // is lost at the end of a take.
+    const mod = `
+      class Rec extends AudioWorkletProcessor {
+        constructor(){
+          super();
+          this.on = false;
+          this.port.onmessage = e => {
+            if (e.data === 'start') this.on = true;
+            else if (e.data === 'stop') { this.on = false; this.port.postMessage('stopped'); }
+          };
+        }
+        process(inputs){
+          const ch = inputs[0] && inputs[0][0];
+          if (this.on && ch) this.port.postMessage(ch.slice(0));
+          return true;
+        }
+      }
+      registerProcessor('rec', Rec);`;
+    try {
+      await ac.audioWorklet.addModule(URL.createObjectURL(new Blob([mod], { type: 'text/javascript' })));
+    } catch (err) {
+      // Happens when the page is opened as a local file (file://) or over plain http.
+      ac.close(); ac = null;
+      throw new Error('The recorder could not start. Open this page from an https:// address or http://localhost, not by double-clicking the file.');
+    }
+  }
+  if (ac.state === 'suspended') await ac.resume();
+  takeRate = ac.sampleRate;
+
+  if (srcNode) srcNode.disconnect();
+  srcNode = ac.createMediaStreamSource(stream);
+
+  analyser = ac.createAnalyser();
+  analyser.fftSize = 1024;
+  srcNode.connect(analyser);
+
+  if (worklet) worklet.disconnect();
+  worklet = new AudioWorkletNode(ac, 'rec');
+  worklet.port.onmessage = e => {
+    if (e.data === 'stopped') { if (stopResolve) { stopResolve(); stopResolve = null; } }
+    else chunks.push(e.data);
+  };
+  srcNode.connect(worklet);
+
+  $('#s3').classList.add('done');
+  const label = stream.getAudioTracks()[0].label || 'Microphone';
+  $('#h3').textContent = label + ' · ' + Math.round(takeRate / 1000) + ' kHz';
+  refreshStart();
+}
+
+$('#mics').addEventListener('change', e => {
+  if (recording || stopping) return;
+  if (e.target.value) initMic(e.target.value).catch(err => {
+    $('#h3').textContent = 'Could not open this microphone: ' + err.message;
+    $('#h3').style.whiteSpace = 'normal';
+  });
+});
+
+async function listMics() {
+  try {
+    // Ask once so device labels become visible, then release that stream:
+    // it was opened with default processing (AGC, noise suppression).
+    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+    probe.getTracks().forEach(t => t.stop());
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const ins = devs.filter(d => d.kind === 'audioinput');
+    const sel = $('#mics');
+    sel.innerHTML = '';
+    for (const d of ins) {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || 'Microphone';
+      sel.appendChild(o);
+    }
+    if (ins.length) await initMic(ins[0].deviceId);
+    else $('#h3').textContent = 'No microphone found';
+  } catch (err) {
+    $('#h3').textContent = err && err.name === 'NotAllowedError'
+      ? 'Microphone access was blocked. Allow it in the browser and reload.'
+      : (err && err.message) || 'Could not open the microphone.';
+    $('#h3').style.whiteSpace = 'normal';
+  }
+}
+
+function refreshStart() {
+  $('#start').disabled = !(items.length && dirHandle && stream);
+}
+
+/* ============ start ============ */
+$('#start').addEventListener('click', () => {
+  $('#setup').style.display = 'none';
+  $('#app').style.display = 'flex';
+  idx = 0;
+  if ($('#skipdone').checked) {
+    const n = items.findIndex(it => !doneSet.has(it.id));
+    if (n < 0) { startMeter(); return finish(); }
+    idx = n;
+  }
+  show();
+  startMeter();
+});
+
+/* ============ navigation ============ */
+function show() {
+  const it = items[idx];
+  $('#sid').textContent = it.id;
+  $('#sentence').textContent = it.text;
+  $('#count').textContent = (idx + 1) + ' / ' + items.length + ' · ' + doneSet.size + ' recorded';
+  $('#barfill').style.width = (doneSet.size / items.length * 100) + '%';
+  $('#jump').value = idx + 1;
+  $('#saved-tag').textContent = doneSet.has(it.id) ? 'Already recorded. Saving a new take replaces it.' : '';
+  discardTake();
+}
+
+function busy() { return recording || stopping || saving; }
+
+function go(d) {
+  if (busy()) return;  // never move while a take is in progress
+  const n = idx + d;
+  if (n < 0 || n >= items.length) return;
+  idx = n;
+  show();
+}
+$('#prev').addEventListener('click', () => go(-1));
+$('#next').addEventListener('click', () => go(1));
+$('#jump').addEventListener('change', e => {
+  const v = parseInt(e.target.value, 10);
+  if (!busy() && v >= 1 && v <= items.length) { idx = v - 1; show(); }
+  else e.target.value = idx + 1;
+  e.target.blur(); // give keyboard shortcuts back
+});
+
+/* ============ recording ============ */
+function setNavLock(on) {
+  $('#prev').disabled = $('#next').disabled = on;
+  $('#jump').disabled = on;
+}
+
+function startRec() {
+  if (busy() || !worklet) return;
+  audioEl.pause();          // don't record the previous take through the speakers
+  chunks = [];
+  recording = true;
+  worklet.port.postMessage('start');
+  document.body.classList.add('recording');
+  $('#rec').innerHTML = 'Stop<kbd>Space</kbd>';
+  $('#play').disabled = $('#approve').disabled = $('#retake').disabled = true;
+  setNavLock(true);
+  $('#mlabel').textContent = '';
+  $('#mlabel').classList.remove('bad');
+  peakHold = 0;
+}
+
+async function stopRec() {
+  if (!recording) return;
+  recording = false;
+  stopping = true;
+  document.body.classList.remove('recording');
+  $('#rec').innerHTML = 'Record<kbd>Space</kbd>';
+  $('#rec').disabled = true;
+
+  // wait until the worklet confirms the final chunk has been sent
+  await new Promise(res => { stopResolve = res; worklet.port.postMessage('stop'); });
+  stopping = false;
+  $('#rec').disabled = false;
+  setNavLock(false);
+
+  let len = 0;
+  for (const c of chunks) len += c.length;
+  if (!len) return;
+  let buf = new Float32Array(len), o = 0;
+  for (const c of chunks) { buf.set(c, o); o += c.length; }
+  chunks = [];
+
+  if ($('#trim').checked) buf = trimSilence(buf, takeRate);
+  takeBuf = buf;
+
+  const blob = new Blob([encodeWAV(buf, takeRate)], { type: 'audio/wav' });
+  if (takeURL) URL.revokeObjectURL(takeURL); // free the previous take's memory
+  takeURL = URL.createObjectURL(blob);
+  audioEl.src = takeURL;
+
+  $('#play').disabled = $('#approve').disabled = $('#retake').disabled = false;
+  reportTake(buf);
+}
+
+function discardTake() {
+  takeBuf = null;
+  audioEl.pause();
+  if (takeURL) { URL.revokeObjectURL(takeURL); takeURL = null; audioEl.removeAttribute('src'); }
+  $('#play').disabled = $('#approve').disabled = $('#retake').disabled = true;
+  $('#mlabel').textContent = '';
+  $('#mlabel').classList.remove('bad');
+}
+
+$('#rec').addEventListener('click', () => recording ? stopRec() : startRec());
+$('#retake').addEventListener('click', () => { if (busy()) return; discardTake(); startRec(); });
+$('#play').addEventListener('click', () => { audioEl.currentTime = 0; audioEl.play(); });
+$('#approve').addEventListener('click', save);
+
+// Trims on short-window loudness instead of single samples, and needs the
+// sound to last at least 60 ms. A keyboard click (e.g. pressing Space to
+// stop) is too short to count as speech, so it gets trimmed away.
+function trimSilence(buf, rate) {
+  const thr = 0.0056;                    // about -45 dBFS RMS
+  const win = Math.floor(rate * 0.01);   // 10 ms windows
+  const need = 6;                        // 60 ms of sustained sound
+  const pad = Math.floor(rate * 0.2);    // keep 200 ms
+  const nWin = Math.floor(buf.length / win);
+  if (nWin < need) return buf;
+
+  const loud = new Uint8Array(nWin);
+  for (let w = 0; w < nWin; w++) {
+    let sum = 0;
+    for (let i = w * win, end = i + win; i < end; i++) sum += buf[i] * buf[i];
+    loud[w] = Math.sqrt(sum / win) >= thr ? 1 : 0;
+  }
+  let first = -1, last = -1, run = 0;
+  for (let w = 0; w < nWin; w++) {
+    run = loud[w] ? run + 1 : 0;
+    if (run === need && first < 0) first = w - need + 1;
+  }
+  run = 0;
+  for (let w = nWin - 1; w >= 0; w--) {
+    run = loud[w] ? run + 1 : 0;
+    if (run === need) { last = w + need - 1; break; }
+  }
+  if (first < 0 || last < first) return buf; // nothing that looks like speech
+  const s = Math.max(0, first * win - pad);
+  const e = Math.min(buf.length, (last + 1) * win + pad);
+  return buf.subarray(s, e);
+}
+
+function reportTake(buf) {
+  let peak = 0;
+  for (let i = 0; i < buf.length; i++) { const a = Math.abs(buf[i]); if (a > peak) peak = a; }
+  const secs = buf.length / takeRate;
+  const db = 20 * Math.log10(peak || 1e-6);
+  const L = $('#mlabel');
+  L.classList.remove('bad');
+  if (peak >= 0.99) { L.textContent = 'Too loud, the audio clipped. Please record it again.'; L.classList.add('bad'); }
+  else if (peak < 0.08) { L.textContent = 'Too quiet. Move a little closer to the microphone.'; L.classList.add('bad'); }
+  else L.textContent = secs.toFixed(1) + ' s · peak ' + db.toFixed(0) + ' dBFS';
+}
+
+/* live meter */
+function startMeter() {
+  if (meterRAF) return;
+  const data = new Float32Array(1024);
+  const fill = $('#mfill');
+  (function loop() {
+    meterRAF = requestAnimationFrame(loop);
+    if (!analyser) return;
+    analyser.getFloatTimeDomainData(data);
+    let p = 0;
+    for (let i = 0; i < data.length; i++) { const a = Math.abs(data[i]); if (a > p) p = a; }
+    peakHold = Math.max(p, peakHold * 0.90);
+    fill.style.width = Math.min(100, peakHold * 100) + '%';
+    fill.className = peakHold >= 0.99 ? 'clip' : peakHold > 0.85 ? 'hot' : '';
+  })();
+}
+
+/* ============ saving ============ */
+async function save() {
+  if (!takeBuf || busy()) return;
+  saving = true;
+  $('#approve').disabled = $('#retake').disabled = $('#play').disabled = true;
+  $('#rec').disabled = true;
+  setNavLock(true);
+  const it = items[idx];
+  try {
+    const fh = await dirHandle.getFileHandle(it.id + '.wav', { create: true });
+    const w = await fh.createWritable();
+    await w.write(encodeWAV(takeBuf, takeRate));
+    await w.close();
+    doneSet.add(it.id);
+    await writeMetadata();
+  } catch (err) {
+    $('#mlabel').textContent = 'Could not save this take: ' + err.message;
+    $('#mlabel').classList.add('bad');
+    $('#approve').disabled = $('#retake').disabled = $('#play').disabled = false;
+    return;
+  } finally {
+    saving = false;
+    $('#rec').disabled = false;
+    setNavLock(false);
+  }
+  if (doneSet.size >= items.length) return finish();
+  let n = idx + 1;
+  if ($('#skipdone').checked) while (n < items.length && doneSet.has(items[n].id)) n++;
+  if (n >= items.length) return finish();
+  idx = n;
+  show();
+}
+
+async function writeMetadata() {
+  const lines = items.filter(it => doneSet.has(it.id)).map(it => it.id + '|' + it.text);
+  const fh = await dirHandle.getFileHandle('metadata.csv', { create: true });
+  const w = await fh.createWritable();
+  await w.write(new Blob([lines.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' }));
+  await w.close();
+}
+
+/* ============ WAV ============ */
+function encodeWAV(samples, rate) {
+  const n = samples.length;
+  const ab = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(ab);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, n * 2, true);
+  let o = 44;
+  for (let i = 0; i < n; i++) {
+    let s = samples[i];
+    s = s > 1 ? 1 : s < -1 ? -1 : s;
+    v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    o += 2;
+  }
+  return ab;
+}
+
+/* ============ keyboard ============ */
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if ($('#app').style.display !== 'flex') return;
+  if (e.repeat) { if (e.code === 'Space' || e.key === 'Enter') e.preventDefault(); return; } // holding a key must not toggle repeatedly
+  const k = e.key.toLowerCase();
+  if (e.code === 'Space') { e.preventDefault(); recording ? stopRec() : startRec(); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (!$('#approve').disabled) save(); }
+  else if (k === 'r') { if (!$('#retake').disabled) { discardTake(); startRec(); } }
+  else if (k === 'p') { if (!$('#play').disabled) { audioEl.currentTime = 0; audioEl.play(); } }
+  else if (e.key === 'ArrowLeft') go(-1);   // left = previous
+  else if (e.key === 'ArrowRight') go(1);   // right = next
+});
+
+window.addEventListener('beforeunload', e => {
+  if (recording || stopping || saving || takeBuf) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ============ done + zip ============ */
+function finish() {
+  $('#app').style.display = 'none';
+  $('#done').style.display = 'block';
+  const ds = $('#donestats');
+  ds.textContent = doneSet.size + ' of ' + items.length + ' sentences recorded.';
+  ds.appendChild(document.createElement('br'));
+  ds.appendChild(document.createTextNode('The files are in the “' + dirHandle.name + '” folder.'));
+}
+$('#backwork').addEventListener('click', () => {
+  $('#done').style.display = 'none';
+  $('#app').style.display = 'flex';
+  if (idx >= items.length) idx = items.length - 1;
+  show();
+});
+
+/* store-only ZIP, streamed so memory stays flat */
+const CRC_T = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+$('#makezip').addEventListener('click', async () => {
+  const st = $('#zipstatus');
+  let out;
+  try {
+    const fh = await window.showSaveFilePicker({
+      suggestedName: 'aron_recordings.zip',
+      types: [{ description: 'ZIP', accept: { 'application/zip': ['.zip'] } }]
+    });
+    out = await fh.createWritable();
+  } catch { return; }
+
+  const enc = new TextEncoder();
+  const names = items.filter(it => doneSet.has(it.id)).map(it => it.id + '.wav');
+  names.push('metadata.csv');
+
+  const central = [];
+  let offset = 0, i = 0;
+
+  for (const name of names) {
+    st.textContent = 'ZIP: ' + (++i) + ' / ' + names.length;
+    let u8;
+    try {
+      const fh = await dirHandle.getFileHandle(name);
+      u8 = new Uint8Array(await (await fh.getFile()).arrayBuffer());
+    } catch { continue; }
+
+    const nb = enc.encode(name);
+    const crc = crc32(u8);
+
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true);
+    lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(8, 0, true); lh.setUint16(10, 0, true); lh.setUint16(12, 0, true);
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, u8.length, true); lh.setUint32(22, u8.length, true);
+    lh.setUint16(26, nb.length, true); lh.setUint16(28, 0, true);
+    await out.write(new Uint8Array(lh.buffer));
+    await out.write(nb);
+    await out.write(u8);
+
+    central.push({ name: nb, crc, size: u8.length, offset });
+    offset += 30 + nb.length + u8.length;
+  }
+
+  const cdStart = offset;
+  for (const e of central) {
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true);
+    ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, 0, true); ch.setUint16(14, 0, true);
+    ch.setUint32(16, e.crc, true);
+    ch.setUint32(20, e.size, true); ch.setUint32(24, e.size, true);
+    ch.setUint16(28, e.name.length, true);
+    ch.setUint16(30, 0, true); ch.setUint16(32, 0, true);
+    ch.setUint16(34, 0, true); ch.setUint16(36, 0, true);
+    ch.setUint32(38, 0, true); ch.setUint32(42, e.offset, true);
+    await out.write(new Uint8Array(ch.buffer));
+    await out.write(e.name);
+    offset += 46 + e.name.length;
+  }
+
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true);
+  eo.setUint16(4, 0, true); eo.setUint16(6, 0, true);
+  eo.setUint16(8, central.length, true); eo.setUint16(10, central.length, true);
+  eo.setUint32(12, offset - cdStart, true); eo.setUint32(16, cdStart, true);
+  eo.setUint16(20, 0, true);
+  await out.write(new Uint8Array(eo.buffer));
+  await out.close();
+
+  st.textContent = 'ZIP file created with ' + central.length + ' files.';
+});
+</script>
+</body>
+</html>
