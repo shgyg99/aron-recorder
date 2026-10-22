@@ -212,12 +212,6 @@
   <div class="opts">
     <div class="opt-row">
       <div>
-        <div>Trim silence at start and end</div>
-        <div class="d">Keeps 200 ms of padding</div>
-      </div>
-    </div>
-    <div class="opt-row">
-      <div>
         <div>Skip sentences already recorded</div>
         <div class="d">Continue where you left off</div>
       </div>
@@ -600,7 +594,9 @@ async function stopRec() {
   for (const c of chunks) { buf.set(c, o); o += c.length; }
   chunks = [];
 
-  if ($('#trim').checked) buf = trimSilence(buf, takeRate);
+  // Takes are saved raw. Trimming and padding happen later in
+  // prepare_audio.py, where the padding is room tone from the same file
+  // rather than a hard cut, and suspiciously truncated takes get reported.
   takeBuf = buf;
 
   const blob = new Blob([encodeWAV(buf, takeRate)], { type: 'audio/wav' });
@@ -625,39 +621,6 @@ $('#rec').addEventListener('click', () => recording ? stopRec() : startRec());
 $('#retake').addEventListener('click', () => { if (busy()) return; discardTake(); startRec(); });
 $('#play').addEventListener('click', () => { audioEl.currentTime = 0; audioEl.play(); });
 $('#approve').addEventListener('click', save);
-
-// Trims on short-window loudness instead of single samples, and needs the
-// sound to last at least 60 ms. A keyboard click (e.g. pressing Space to
-// stop) is too short to count as speech, so it gets trimmed away.
-function trimSilence(buf, rate) {
-  const thr = 0.0056;                    // about -45 dBFS RMS
-  const win = Math.floor(rate * 0.01);   // 10 ms windows
-  const need = 6;                        // 60 ms of sustained sound
-  const pad = Math.floor(rate * 0.2);    // keep 200 ms
-  const nWin = Math.floor(buf.length / win);
-  if (nWin < need) return buf;
-
-  const loud = new Uint8Array(nWin);
-  for (let w = 0; w < nWin; w++) {
-    let sum = 0;
-    for (let i = w * win, end = i + win; i < end; i++) sum += buf[i] * buf[i];
-    loud[w] = Math.sqrt(sum / win) >= thr ? 1 : 0;
-  }
-  let first = -1, last = -1, run = 0;
-  for (let w = 0; w < nWin; w++) {
-    run = loud[w] ? run + 1 : 0;
-    if (run === need && first < 0) first = w - need + 1;
-  }
-  run = 0;
-  for (let w = nWin - 1; w >= 0; w--) {
-    run = loud[w] ? run + 1 : 0;
-    if (run === need) { last = w + need - 1; break; }
-  }
-  if (first < 0 || last < first) return buf; // nothing that looks like speech
-  const s = Math.max(0, first * win - pad);
-  const e = Math.min(buf.length, (last + 1) * win + pad);
-  return buf.subarray(s, e);
-}
 
 function reportTake(buf) {
   let peak = 0;
