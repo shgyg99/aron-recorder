@@ -296,8 +296,7 @@ const $ = s => document.querySelector(s);
 /* ============ 0. password + script from Google Drive ============ */
 // Paste the Web app URL from Apps Script (Deploy → Manage deployments) here.
 // The URL is not a secret; the password is checked on Google's side.
-const DRIVE_API_URL = 'https://script.google.com/macros/s/AKfycbzOEJqgfcxdifRF0_ug9lvVCkHrTKTtVVgur2Y8D8RBRw-ihdLKnBozVlh03UPqU7ViEA/exec';
-
+const DRIVE_API_URL = 'https://script.google.com/macros/s/AKfycbxKO1XpZLs7wZ_Iq2k9sURLLppClChmOiHOmKEZKrzVy1t4lqUHThVM94gVdbZafQ9HTg/exec';
 async function unlock() {
   const msg = $('#lockmsg');
   const pw = $('#pw').value;
